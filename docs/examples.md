@@ -253,7 +253,7 @@ Path("settings.toml").validate()  # Auto-detects TOML
 Path("data.txt").validate(file_type='json')  # Force JSON validation
 ```
 
-### Handling None Values
+## Handling None Values
 
 pathlib3 safely handles `None` values:
 ```python
