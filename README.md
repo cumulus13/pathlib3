@@ -79,6 +79,9 @@ from pathlib3 import Path
 # Path(None) returns current directory
 p = Path(None)  # Path('.')
 
+other_dir = None # if some variable is None
+p = Path(other_dir, "my_dir")  # Path('my_dir')
+
 # Use safe() for explicit None handling
 p = Path.safe(None)           # Path('.')
 p = Path.safe(None, '/tmp')   # Path('/tmp')
