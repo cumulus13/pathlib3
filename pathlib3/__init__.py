@@ -231,7 +231,6 @@ class EmailConfig:
             use_tls=True
         )
 
-
 # ===================================================================
 # Path - Extended Path Class
 # ===================================================================
@@ -332,6 +331,13 @@ class Path(type(_PathBase())):
     EMAIL OPERATIONS:
     - .email_as_attachment() - Send file as email attachment
     - .send_email() - Send email with multiple attachments (static method)
+
+    IMAGE OPERATIONS (requires Pillow):
+    - .to_ico() - Convert image to ICO format (single or multi-size)
+    - .resize() - Resize image with aspect ratio preservation
+    - .thumbnail() - Create thumbnail
+    - .convert_format() - Convert image format (PNG, JPEG, WebP, etc.)
+    - .metadata() - Extract image metadata (EXIF, dimensions, etc.)
 
     """
     
@@ -2300,6 +2306,467 @@ class Path(type(_PathBase())):
         except Exception as e:
             raise ConnectionError(f"Failed to send email: {e}")
 
+    def to_ico(
+        self,
+        sizes: Optional[List[int]] = None,
+        output_path: Optional[Union[str, 'Path']] = None,
+        multi_size: bool = False,
+        overwrite: bool = False
+    ) -> Union['Path', List['Path']]:
+        """
+        Convert image (PNG, JPEG, etc.) to ICO format.
+        
+        Args:
+            sizes: List of icon sizes (default: [16, 32, 48, 64, 128, 256])
+            output_path: Output path (default: same name with .ico extension)
+            multi_size: Create one multi-size ICO file (default: separate files)
+            overwrite: Overwrite existing files
+        
+        Returns:
+            Path or List[Path]: Created ICO file(s)
+        
+        Raises:
+            ImportError: If Pillow is not installed
+            ValueError: If file is not an image or conversion fails
+        
+        Example:
+            >>> # Single image to multiple ICO files
+            >>> Path('logo.png').to_ico()
+            [Path('logo_16.ico'), Path('logo_32.ico'), ...]
+            
+            >>> # Custom sizes
+            >>> Path('icon.png').to_ico(sizes=[16, 32, 64])
+            
+            >>> # Multi-size ICO (Windows style)
+            >>> Path('app.png').to_ico(multi_size=True)
+            Path('app.ico')
+            
+            >>> # Custom output path
+            >>> Path('image.jpg').to_ico(
+            ...     output_path='favicon.ico',
+            ...     multi_size=True
+            ... )
+        """
+        if not PIL_AVAILABLE:
+            raise ImportError(
+                "Pillow library not installed. Install with: pip install Pillow"
+            )
+        
+        if not self.exists():
+            raise ValueError(f"File does not exist: {self}")
+        
+        if not self.is_file():
+            raise ValueError(f"Not a file: {self}")
+        
+        # Default sizes
+        if sizes is None:
+            sizes = [16, 32, 48, 64, 128, 256]
+        
+        # Validate sizes
+        for size in sizes:
+            if size <= 0:
+                raise ValueError(f"Invalid size: {size}. Sizes must be positive.")
+            if size > 1024:
+                raise ValueError(f"Size {size} too large. Maximum is 1024.")
+        
+        try:
+            from PIL import Image
+            
+            # Open and verify image
+            with Image.open(self) as img:
+                img.verify()
+            
+            # Reopen for processing
+            with Image.open(self) as img:
+                img_rgba = img.convert("RGBA")
+                
+                if multi_size:
+                    # Create one multi-size ICO file
+                    if output_path is None:
+                        output_path = Path(self.with_suffix('.ico'))
+                    else:
+                        output_path = Path(output_path)
+                    
+                    if output_path.exists() and not overwrite:
+                        raise FileExistsError(f"File exists: {output_path}")
+                    
+                    # Prepare all sizes
+                    ico_images = []
+                    for size in sizes:
+                        square = self._make_square_image(img_rgba, size)
+                        ico_images.append((size, square))
+                    
+                    # Sort by size (largest first)
+                    ico_images.sort(key=lambda x: x[0], reverse=True)
+                    
+                    # Save multi-size ICO
+                    base_size, base_image = ico_images[0]
+                    all_images = [img for _, img in ico_images]
+                    all_sizes = [(s, s) for s, _ in ico_images]
+                    
+                    base_image.save(
+                        output_path,
+                        format="ICO",
+                        sizes=all_sizes,
+                        append_images=all_images[1:] if len(all_images) > 1 else []
+                    )
+                    
+                    return output_path
+                
+                else:
+                    # Create separate ICO files for each size
+                    output_files = []
+                    
+                    for size in sizes:
+                        if output_path is None:
+                            out_file = Path(self.parent / f"{self.stem}_{size}.ico")
+                        else:
+                            # Use provided path with size suffix
+                            base = Path(output_path).stem
+                            out_file = Path(output_path).parent / f"{base}_{size}.ico"
+                        
+                        if out_file.exists() and not overwrite:
+                            raise FileExistsError(f"File exists: {out_file}")
+                        
+                        # Create square and save
+                        square = self._make_square_image(img_rgba, size)
+                        square.save(out_file, format="ICO")
+                        output_files.append(out_file)
+                    
+                    return output_files
+        
+        except Exception as e:
+            raise ValueError(f"Failed to convert to ICO: {e}")
+    
+    def _make_square_image(self, img: 'Image.Image', size: int) -> 'Image.Image':
+        """
+        Internal helper: Resize and pad image to square with transparency.
+        
+        Args:
+            img: PIL Image (RGBA mode)
+            size: Target size
+        
+        Returns:
+            Image: Square image with padding
+        """
+        from PIL import Image
+        
+        if size <= 0:
+            raise ValueError(f"Invalid size: {size}")
+        
+        w, h = img.size
+        
+        if w == 0 or h == 0:
+            raise ValueError("Image has zero dimensions")
+        
+        # Already square and correct size
+        if w == h == size:
+            return img.copy()
+        
+        # Calculate scaling to fit in square
+        scale = min(size / w, size / h)
+        new_w = max(1, int(w * scale))
+        new_h = max(1, int(h * scale))
+        
+        # Resize with high quality
+        resized = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        
+        # Create transparent canvas
+        canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        
+        # Center the image
+        paste_x = (size - new_w) // 2
+        paste_y = (size - new_h) // 2
+        canvas.paste(resized, (paste_x, paste_y), resized)
+        
+        return canvas
+
+    def resize(
+        self,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        max_size: Optional[int] = None,
+        keep_aspect: bool = True,
+        output_path: Optional[Union[str, 'Path']] = None,
+        quality: int = 95,
+        optimize: bool = True
+    ) -> 'Path':
+        """
+        Resize image with aspect ratio preservation.
+        
+        Args:
+            width: Target width (None = auto from height)
+            height: Target height (None = auto from width)
+            max_size: Maximum dimension (scales to fit)
+            keep_aspect: Preserve aspect ratio
+            output_path: Output path (default: overwrite original)
+            quality: JPEG quality 1-100 (default: 95)
+            optimize: Optimize output file size
+        
+        Returns:
+            Path: Output file path
+        
+        Raises:
+            ImportError: If Pillow not installed
+            ValueError: If invalid parameters
+        
+        Example:
+            >>> # Resize to specific width (auto height)
+            >>> Path('image.jpg').resize(width=800)
+            
+            >>> # Resize to fit in 1024x1024
+            >>> Path('photo.png').resize(max_size=1024)
+            
+            >>> # Exact size (no aspect ratio)
+            >>> Path('banner.jpg').resize(
+            ...     width=1200,
+            ...     height=400,
+            ...     keep_aspect=False
+            ... )
+            
+            >>> # Save to different file
+            >>> Path('original.png').resize(
+            ...     width=500,
+            ...     output_path='thumbnail.png'
+            ... )
+        """
+        if not PIL_AVAILABLE:
+            raise ImportError(
+                "Pillow library not installed. Install with: pip install Pillow"
+            )
+        
+        if not self.exists():
+            raise ValueError(f"File does not exist: {self}")
+        
+        # Validate parameters
+        if width is None and height is None and max_size is None:
+            raise ValueError("Must specify width, height, or max_size")
+        
+        try:
+            from PIL import Image
+            
+            with Image.open(self) as img:
+                orig_w, orig_h = img.size
+                
+                # Calculate new dimensions
+                if max_size is not None:
+                    # Scale to fit in max_size x max_size
+                    scale = min(max_size / orig_w, max_size / orig_h)
+                    new_w = int(orig_w * scale)
+                    new_h = int(orig_h * scale)
+                
+                elif width is not None and height is not None:
+                    if keep_aspect:
+                        # Use width/height as max dimensions
+                        scale = min(width / orig_w, height / orig_h)
+                        new_w = int(orig_w * scale)
+                        new_h = int(orig_h * scale)
+                    else:
+                        # Exact dimensions (may distort)
+                        new_w = width
+                        new_h = height
+                
+                elif width is not None:
+                    # Width specified, calculate height
+                    new_w = width
+                    new_h = int(orig_h * (width / orig_w)) if keep_aspect else orig_h
+                
+                else:  # height is not None
+                    # Height specified, calculate width
+                    new_h = height
+                    new_w = int(orig_w * (height / orig_h)) if keep_aspect else orig_w
+                
+                # Ensure minimum size
+                new_w = max(1, new_w)
+                new_h = max(1, new_h)
+                
+                # Resize image
+                resized = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                
+                # Determine output path
+                if output_path is None:
+                    output_path = self
+                else:
+                    output_path = Path(output_path)
+                
+                # Save with appropriate format
+                save_kwargs = {}
+                
+                if output_path.suffix.lower() in ('.jpg', '.jpeg'):
+                    save_kwargs['quality'] = quality
+                    save_kwargs['optimize'] = optimize
+                elif output_path.suffix.lower() == '.png':
+                    save_kwargs['optimize'] = optimize
+                
+                resized.save(output_path, **save_kwargs)
+                
+                return Path(output_path)
+        
+        except Exception as e:
+            raise ValueError(f"Failed to resize image: {e}")
+
+    def thumbnail(
+        self,
+        size: int = 256,
+        output_path: Optional[Union[str, 'Path']] = None,
+        suffix: str = '_thumb',
+        square: bool = False
+    ) -> 'Path':
+        """
+        Create thumbnail from image.
+        
+        Args:
+            size: Maximum dimension (default: 256)
+            output_path: Output path (default: add suffix to filename)
+            suffix: Filename suffix (default: '_thumb')
+            square: Make square thumbnail with padding
+        
+        Returns:
+            Path: Thumbnail file path
+        
+        Example:
+            >>> Path('photo.jpg').thumbnail()
+            Path('photo_thumb.jpg')
+            
+            >>> Path('image.png').thumbnail(size=128, square=True)
+            Path('image_thumb.png')
+        """
+        if not PIL_AVAILABLE:
+            raise ImportError(
+                "Pillow library not installed. Install with: pip install Pillow"
+            )
+        
+        try:
+            from PIL import Image
+            
+            with Image.open(self) as img:
+                if square:
+                    # Create square thumbnail with padding
+                    img_rgba = img.convert("RGBA")
+                    thumb = self._make_square_image(img_rgba, size)
+                else:
+                    # Standard thumbnail (maintain aspect ratio)
+                    img.thumbnail((size, size), Image.Resampling.LANCZOS)
+                    thumb = img.copy()
+                
+                # Determine output path
+                if output_path is None:
+                    output_path = Path(self.parent / f"{self.stem}{suffix}{self.suffix}")
+                else:
+                    output_path = Path(output_path)
+                
+                # Save thumbnail
+                thumb.save(output_path)
+                
+                return output_path
+        
+        except Exception as e:
+            raise ValueError(f"Failed to create thumbnail: {e}")
+
+    def convert_format(
+        self,
+        target_format: str,
+        output_path: Optional[Union[str, 'Path']] = None,
+        quality: int = 95,
+        **kwargs
+    ) -> 'Path':
+        """
+        Convert image to different format.
+        
+        Args:
+            target_format: Target format ('png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif')
+            output_path: Output path (default: same name with new extension)
+            quality: Quality for lossy formats (1-100)
+            **kwargs: Additional format-specific arguments
+        
+        Returns:
+            Path: Converted file path
+        
+        Example:
+            >>> # PNG to JPEG
+            >>> Path('image.png').convert_format('jpg')
+            Path('image.jpg')
+            
+            >>> # JPEG to WebP (smaller size)
+            >>> Path('photo.jpg').convert_format('webp', quality=80)
+            Path('photo.webp')
+            
+            >>> # Any format to PNG (lossless)
+            >>> Path('image.bmp').convert_format('png')
+            Path('image.png')
+        """
+        if not PIL_AVAILABLE:
+            raise ImportError(
+                "Pillow library not installed. Install with: pip install Pillow"
+            )
+        
+        # Normalize format
+        target_format = target_format.lower().lstrip('.')
+        
+        # Supported formats
+        supported = {
+            'jpg': 'JPEG', 'jpeg': 'JPEG',
+            'png': 'PNG',
+            'webp': 'WEBP',
+            'bmp': 'BMP',
+            'gif': 'GIF',
+            'tiff': 'TIFF', 'tif': 'TIFF',
+            'ico': 'ICO'
+        }
+        
+        if target_format not in supported:
+            raise ValueError(
+                f"Unsupported format: {target_format}. "
+                f"Supported: {', '.join(set(supported.keys()))}"
+            )
+        
+        try:
+            from PIL import Image
+            
+            with Image.open(self) as img:
+                # Convert mode for specific formats
+                pil_format = supported[target_format]
+                
+                if pil_format == 'JPEG':
+                    # JPEG doesn't support transparency
+                    if img.mode in ('RGBA', 'LA', 'P'):
+                        # Create white background
+                        background = Image.new('RGB', img.size, (255, 255, 255))
+                        if img.mode == 'P':
+                            img = img.convert('RGBA')
+                        background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+                        img = background
+                    else:
+                        img = img.convert('RGB')
+                
+                elif pil_format == 'PNG':
+                    # Ensure RGBA for PNG
+                    if img.mode not in ('RGBA', 'RGB', 'L', 'P'):
+                        img = img.convert('RGBA')
+                
+                # Determine output path
+                if output_path is None:
+                    output_path = Path(self.with_suffix(f'.{target_format}'))
+                else:
+                    output_path = Path(output_path)
+                
+                # Prepare save arguments
+                save_kwargs = kwargs.copy()
+                
+                if pil_format in ('JPEG', 'WEBP'):
+                    save_kwargs.setdefault('quality', quality)
+                    save_kwargs.setdefault('optimize', True)
+                elif pil_format == 'PNG':
+                    save_kwargs.setdefault('optimize', True)
+                
+                # Save converted image
+                img.save(output_path, format=pil_format, **save_kwargs)
+                
+                return output_path
+        
+        except Exception as e:
+            raise ValueError(f"Failed to convert format: {e}")
+                    
 # ===================================================================
 # PurePath3 - Extended PurePath (for path manipulation without I/O)
 # ===================================================================

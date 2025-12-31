@@ -431,3 +431,88 @@ except ValueError as e:
     print(f"Invalid input: {e}")
 
 ```
+
+## Image Manipulation
+
+Perform basic image operations:
+
+```python
+from pathlib3 import Path
+
+# Multiple ICO files (one per size)
+Path('logo.png').to_ico()
+# Creates: logo_16.ico, logo_32.ico, logo_48.ico, ...
+
+# Single multi-size ICO (Windows style)
+Path('app.png').to_ico(multi_size=True)
+# Creates: app.ico (contains all sizes)
+
+# Custom sizes
+Path('icon.png').to_ico(
+    sizes=[16, 32, 64, 128],
+    multi_size=True
+)
+
+# Favicon for website
+Path('logo.png').to_ico(
+    sizes=[16, 32, 48],
+    output_path='favicon.ico',
+    multi_size=True
+)
+
+# Resize to width (auto height)
+Path('photo.jpg').resize(width=1920)
+
+# Resize to fit in 1024x1024
+Path('image.png').resize(max_size=1024)
+
+# Exact dimensions (may distort)
+Path('banner.jpg').resize(
+    width=1200,
+    height=400,
+    keep_aspect=False
+)
+
+# Create thumbnail
+Path('photo.jpg').resize(
+    max_size=300,
+    output_path='thumb.jpg',
+    quality=85
+)
+
+# Quick thumbnail
+Path('photo.jpg').thumbnail()  # photo_thumb.jpg (256px max)
+
+# Small square thumbnail
+Path('image.png').thumbnail(size=128, square=True)
+
+# Custom output
+Path('photo.jpg').thumbnail(
+    size=200,
+    output_path='thumbnails/photo_small.jpg'
+)
+
+# PNG to JPEG
+Path('transparent.png').convert_format('jpg')
+
+# JPEG to WebP (smaller file size)
+Path('photo.jpg').convert_format('webp', quality=80)
+
+# Any to PNG (lossless)
+Path('image.bmp').convert_format('png')
+
+# JPEG to PNG (preserve transparency)
+Path('logo.jpg').convert_format('png')
+
+# Batch resize
+for img in Path('photos').find_files('*.jpg'):
+    img.resize(max_size=1920, output_path=f'resized/{img.name}')
+
+# Create thumbnails for all images
+for img in Path('.').find_files('*.png'):
+    img.thumbnail(size=256)
+
+# Convert all PNG to WebP
+for png in Path('images').find_files('*.png'):
+    png.convert_format('webp', quality=85)
+```
