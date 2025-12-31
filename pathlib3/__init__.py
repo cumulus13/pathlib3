@@ -595,7 +595,7 @@ class Path(type(_PathBase())):
         return self.copy_to(backup_path, overwrite=True)
     
     # ===============================================================
-    # FILE INFO
+    # FILE INFOsd
     # ===============================================================
     
     def size(self) -> int:
@@ -1088,7 +1088,7 @@ class Path(type(_PathBase())):
         
         if self.is_file():
             
-            if not self.ext() in exts:  # type: ignore
+            if not self.ext().lower() in [i.lower() for i in exts]:  # type: ignore
                 return None
             try:
                 audio = ID3(self)  # type: ignore
@@ -1193,7 +1193,7 @@ class Path(type(_PathBase())):
 
         elif self.is_dir():
             for item in self.iterdir():
-                if item.is_file() and item.ext() in ['mp3', 'mp4', 'm4a', 'flac', 'ogg', 'wav', 'wma', 'aac']:
+                if item.is_file() and item.ext().lower() in [i.lower() for i in exts]:  # type: ignore
                     item.show_info(table)
 
     def music_tag(self, exts: Optional[List] = ['mp3', 'mp4', 'm4a', 'flac', 'ogg', 'wav', 'wma', 'aac']) -> Optional[dict]:
@@ -1213,6 +1213,8 @@ class Path(type(_PathBase())):
             return None
         
         if self.is_file():
+            if not self.ext().lower() in [i.lower() for i in exts]:  # type: ignore
+                return None
             try:
                 audio = MutagenFile(self)  # type: ignore
                 if audio is None:
@@ -1227,7 +1229,7 @@ class Path(type(_PathBase())):
         elif self.is_dir():
             all_tags = {}
             for item in self.iterdir():
-                if item.is_file() and item.ext() in exts:  # type: ignore
+                if item.is_file() and item.ext().lower() in [i.lower() for i in exts]:  # type: ignore
                     tags = item.music_tag()
                     if tags:
                         all_tags[item.basename()] = tags
