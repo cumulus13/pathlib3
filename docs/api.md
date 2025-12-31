@@ -105,3 +105,12 @@ Methods for searching:
 Methods for comparing files:
 
 - `same_content(other)` - Check if files have same content
+
+### Music File Metadata
+
+Methods for working with music file metadata:
+
+- `show_info()` - Display music file metadata
+- `show_info(exts)` - Display metadata for music files in directory
+- `music_tag()` - Get music file metadata as dict
+- `music_tag(exts)` - Get metadata for music files in directory as list of dicts

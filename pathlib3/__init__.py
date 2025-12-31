@@ -41,6 +41,25 @@ import json
 import pickle
 from typing import Union, Tuple, List, Optional, Callable, Any, Iterator
 from datetime import datetime
+import traceback
+
+RICH_AVAILABLE = False
+MUTAGEN_AVAILABLE = False
+
+try:
+    from rich.table import Table
+    from rich.console import Console
+    console = Console(width=os.get_terminal_size().columns)
+    RICH_AVAILABLE = True
+except:
+    Table = None
+
+try:
+    from mutagen import File as MutagenFile  # type: ignore
+    from mutagen.id3 import ID3, APIC, error as ID3Error  # type: ignore
+    MUTAGEN_AVAILABLE = True
+except:
+    pass
 
 
 # ===================================================================
@@ -1027,6 +1046,192 @@ class Path(type(_PathBase())):
         except (PermissionError, OSError):
             return False
 
+    # ===============================================================
+    # show music tag, require 'mutagen' package
+    # ===============================================================
+
+    def create_table(self) -> Optional[Table]:  # type: ignore
+        """
+        Create a Rich Table for displaying music tags.
+        Returns:
+            Table: Rich Table object or None if Rich is not available
+        """
+
+        if RICH_AVAILABLE:
+            table = Table(title=f"ID3 Tags - {self.basename()}")  # type: ignore
+            table.add_column("Tag", style="cyan", no_wrap=True)
+            table.add_column("Type", style="magenta")
+            table.add_column("Value", style="yellow")
+            table.add_column("Size", style="green")
+            return table
+        return None
+
+    def show_info(self, table: Optional[Table] = None, exts: Optional[List] = ['mp3', 'mp4', 'm4a', 'flac', 'ogg', 'wav', 'wma', 'aac']) -> None:  # type: ignore
+        """
+        Show music file tags (requires 'mutagen' package).
+
+        Args:
+            table: Rich Table object to populate (if None, a new one is created)
+            exts: List of file extensions to consider as music files
+
+        Returns:
+            None
+
+        Example:
+            >>> Path('song.mp3').show_info()
+            >>> Path('music_dir').show_info()
+        """
+
+        if not MUTAGEN_AVAILABLE:
+            print("mutagen package is not installed. Please install it before.")
+            return None
+        
+        if self.is_file():
+            
+            if not self.ext() in exts:  # type: ignore
+                return None
+            try:
+                audio = ID3(self)  # type: ignore
+            except Exception:
+                return None
+
+            if RICH_AVAILABLE:            
+                table = table or self.create_table()  # type: ignore
+                if not table:
+                    return None
+                for tag_key in audio.keys():
+                    tag_value = audio[tag_key]
+                    tag_type = type(tag_value).__name__
+                    
+                    # print(f"tag_value: {tag_value}")
+                    # print(f"type(tag_value): {type(tag_value)}")
+                    # print(f"dir(tag_value): {dir(tag_value)}")
+
+                    # Value format based on tag type
+                    if hasattr(tag_value, "text"):
+                        # print(f"tag_value.text: {tag_value.text}")
+                        # print(f"type(tag_value.text): {type(tag_value.text)}")
+                        value = tag_value.text[0] if isinstance(tag_value.text, list) else str(tag_value.text)
+
+                        # print(f"value: {value}")
+                        # print(f"type(value): {type(value)}")
+                        # print(f"dir(value): {dir(value)}")
+
+                        if hasattr(value, 'text'):
+                            # print(f"value.text: {value.text}")
+                            # print(f"type(value.text): {type(value.text)}")
+                            # print(f"dir(value.text): {dir(value.text)}")
+                            value = value.text  # type: ignore
+
+                    elif hasattr(tag_value, "url"):
+                        value = tag_value.url
+                    elif hasattr(tag_value, "data"):
+                        value = f"Binary data ({len(tag_value.data)} bytes)"
+                    else:
+                        value = " ".join(tag_value) if isinstance(tag_value, (list or tuple)) else str(tag_value)
+                    
+                    # Trim the value if it is too long
+                    if len(value) > 100:
+                        value = value[:97] + "..."
+                    
+                    # Calculate the size
+                    size = "N/A"
+                    if hasattr(tag_value, "data"):
+                        size = f"{len(tag_value.data)} bytes"  # type: ignore
+                    elif hasattr(tag_value, "__sizeof__"):
+                        try:
+                            size = f"{tag_value.__sizeof__()} bytes"
+                        except:
+                            size = "Unknown"
+                    
+                    table.add_row(tag_key, tag_type, value, size)
+
+                    # print("="*os.get_terminal_size()[0])
+                
+                # Show basic file info
+                file_size = os.path.getsize(self)
+                file_mtime = os.path.getmtime(self)
+                mtime_str = datetime.fromtimestamp(file_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                
+                console.print(table)
+                console.print(f"\n[bold]File Info:[/]")
+                console.print(f"  Path: {self}")
+                console.print(f"  Size: {file_size:,} bytes ({file_size/1024/1024:.2f} MB)")
+                console.print(f"  Modified: {mtime_str}")
+                console.print(f"  Number of tags: {len(audio.keys())}")
+
+            else:
+                print(f"ID3 Tags - {self.basename()}")
+                print("-" * 40)
+                for tag_key in audio.keys():
+                    tag_value = audio[tag_key]
+                    
+                    # Value format based on tag type
+                    if hasattr(tag_value, "text"):
+                        value = str(tag_value.text)
+                    elif hasattr(tag_value, "url"):
+                        value = tag_value.url
+                    elif hasattr(tag_value, "data"):
+                        value = f"Binary data ({len(tag_value.data)} bytes)"
+                    else:
+                        value = str(tag_value)
+                    
+                    # Trim the value if it is too long
+                    if len(value) > 100:
+                        value = value[:97] + "..."
+                    
+                    print(f"{tag_key}: {value}")
+                print("-" * 40)
+                file_size = os.path.getsize(self)
+                file_mtime = os.path.getmtime(self)
+                mtime_str = datetime.fromtimestamp(file_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                print(f"File Info:")
+                print(f"  Path: {self}")
+                print(f"  Size: {file_size:,} bytes ({file_size/1024/1024:.2f} MB)")
+                print(f"  Modified: {mtime_str}")
+                print(f"  Number of tags: {len(audio.keys())}")
+
+        elif self.is_dir():
+            for item in self.iterdir():
+                if item.is_file() and item.ext() in ['mp3', 'mp4', 'm4a', 'flac', 'ogg', 'wav', 'wma', 'aac']:
+                    item.show_info(table)
+
+    def music_tag(self, exts: Optional[List] = ['mp3', 'mp4', 'm4a', 'flac', 'ogg', 'wav', 'wma', 'aac']) -> Optional[dict]:
+        """
+        Get music file tags (requires 'mutagen' package).
+        
+        Returns:
+            dict: Music tags or None if not a music file or mutagen not installed
+        
+        Example:
+            >>> Path('song.mp3').music_tag()
+            {'title': 'Song Title', 'artist': 'Artist Name'}
+        """
+        
+        if not MUTAGEN_AVAILABLE:
+            print("mutagen package is not installed. Please install it to before.")
+            return None
+        
+        if self.is_file():
+            try:
+                audio = MutagenFile(self)  # type: ignore
+                if audio is None:
+                    return None
+                
+                tags = {}
+                for key in audio.keys():
+                    tags[key] = audio[key]
+                return tags
+            except Exception:
+                return None
+        elif self.is_dir():
+            all_tags = {}
+            for item in self.iterdir():
+                if item.is_file() and item.ext() in exts:  # type: ignore
+                    tags = item.music_tag()
+                    if tags:
+                        all_tags[item.basename()] = tags
+            return all_tags
 
 # ===================================================================
 # PurePath3 - Extended PurePath (for path manipulation without I/O)

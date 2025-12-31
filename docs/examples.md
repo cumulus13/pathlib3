@@ -210,3 +210,27 @@ summary.write_text(f"Processed {len(results)} records\n")
 summary.append_text(f"Output: {output.abspath()}\n")
 summary.append_text(f"Size: {output.size_human()}\n")
 ```
+
+## Music tag info
+```python
+from pathlib3 import Path
+music_file = Path("/mnt/musics/album/file.mp3")
+music_file.music_tag() # return dict 
+music_file.show_info() # print music tag info
+
+music_dir = Path("/mnt/musics/album")
+music_dir.music_tag() # return list of dict
+music_dir.music_tag(exts=['mp4','m4a']) # return list of dict for specified extensions
+music_dir.show_info() # print music tag info for all music files
+music_dir.show_info(exts=['mp4','m4a']) # print music tag info for specified extensions
+
+```
+
+
+
+
+
+
+
+
+
