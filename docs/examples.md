@@ -223,7 +223,34 @@ music_dir.music_tag() # return list of dict
 music_dir.music_tag(exts=['mp4','m4a']) # return list of dict for specified extensions
 music_dir.show_info() # print music tag info for all music files
 music_dir.show_info(exts=['mp4','m4a']) # print music tag info for specified extensions
+```
 
+## Validate File Integrity
+
+```python
+from pathlib3 import Path, YAML_AVAILABLE, TOML_AVAILABLE
+
+# Check available libraries
+print(f"YAML support: {YAML_AVAILABLE}")
+print(f"TOML support: {TOML_AVAILABLE}")
+
+# Validate JSON (always works)
+is_valid, error = Path("config.json").validate()
+if is_valid:
+    print("Valid JSON!")
+else:
+    print(f"Invalid: {error}")
+
+# Validate YAML (needs PyYAML)
+is_valid, error = Path("config.yaml").validate(strict=False)
+if not is_valid:
+    print(f"Error: {error}")
+
+# Auto-detect from extension
+Path("settings.toml").validate()  # Auto-detects TOML
+
+# Manual file type
+Path("data.txt").validate(file_type='json')  # Force JSON validation
 ```
 
 

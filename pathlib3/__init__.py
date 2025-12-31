@@ -45,7 +45,11 @@ import traceback
 
 RICH_AVAILABLE = False
 MUTAGEN_AVAILABLE = False
+YAML_AVAILABLE = False
+TOML_AVAILABLE = False
+INI_AVAILABLE = False
 
+# Check for optional dependencies
 try:
     from rich.table import Table
     from rich.console import Console
@@ -61,6 +65,30 @@ try:
 except:
     pass
 
+try:
+    import yaml
+    YAML_AVAILABLE = True
+except ImportError:
+    pass
+
+try:
+    if sys.version_info < (3, 11):
+        import tomli 
+    else:
+        import tomllib
+    TOML_AVAILABLE = True
+except ImportError:
+    try:
+        import tomllib
+        TOML_AVAILABLE = True
+    except ImportError:
+        pass
+
+try:
+    import configparser
+    INI_AVAILABLE = True  # Built-in, always available
+except ImportError:
+    pass
 
 # ===================================================================
 # Path - Extended Path Class
@@ -947,6 +975,124 @@ class Path(type(_PathBase())):
         except UnicodeDecodeError as e:
             raise ValueError(f"Cannot decode file '{self}' with encoding '{encoding}': {e}")
     
+    def validate(self, file_type: Optional[str] = None, strict: bool = True) -> Tuple[bool, Optional[str]]:
+        """
+        Validate file format (JSON, YAML, TOML, INI).
+        
+        Args:
+            file_type: File type to validate ('json', 'yaml', 'yml', 'toml', 'ini')
+                      If None, auto-detect from extension
+            strict: If True, raise error for missing libraries. If False, return (False, error_msg)
+        
+        Returns:
+            tuple: (is_valid, error_message)
+                   (True, None) if valid
+                   (False, "error message") if invalid
+        
+        Raises:
+            ImportError: If required library is not installed (when strict=True)
+            ValueError: If file type is not supported
+        
+        Example:
+            >>> Path('config.json').validate()
+            (True, None)
+            >>> Path('config.yaml').validate()
+            (False, "PyYAML library not installed. Install with: pip install pyyaml")
+            >>> is_valid, error = Path('config.toml').validate(strict=False)
+            >>> if not is_valid:
+            ...     print(f"Invalid: {error}")
+        
+        Supported formats:
+            - JSON (built-in, always available)
+            - YAML (requires PyYAML: pip install pyyaml)
+            - TOML (built-in Python 3.11+, or requires tomli: pip install tomli)
+            - INI (built-in, always available)
+        """
+        # Auto-detect file type from extension
+        if file_type is None:
+            ext = self.ext().lower()
+            if ext in ('yaml', 'yml'):
+                file_type = 'yaml'
+            elif ext == 'toml':
+                file_type = 'toml'
+            elif ext == 'ini':
+                file_type = 'ini'
+            elif ext == 'json':
+                file_type = 'json'
+            else:
+                return (False, f"Unsupported file extension: .{ext}")
+        
+        file_type = file_type.lower()
+        
+        # Check if file exists
+        if not self.exists():
+            return (False, f"File does not exist: {self}")
+        
+        if not self.is_file():
+            return (False, f"Not a file: {self}")
+        
+        # Validate JSON (built-in)
+        if file_type == 'json':
+            try:
+                json.loads(self.read_text(encoding='utf-8'))
+                return (True, None)
+            except json.JSONDecodeError as e:
+                return (False, f"Invalid JSON: {e}")
+            except Exception as e:
+                return (False, f"Error reading file: {e}")
+        
+        # Validate YAML (requires PyYAML)
+        elif file_type in ('yaml', 'yml'):
+            if not YAML_AVAILABLE:
+                error_msg = "PyYAML library not installed. Install with: pip install pyyaml"
+                if strict:
+                    raise ImportError(error_msg)
+                return (False, error_msg)
+            
+            try:
+                yaml.safe_load(self.read_text(encoding='utf-8'))  # type: ignore
+                return (True, None)
+            except yaml.YAMLError as e:  # type: ignore
+                return (False, f"Invalid YAML: {e}")
+            except Exception as e:
+                return (False, f"Error reading file: {e}")
+        
+        # Validate TOML (built-in Python 3.11+ or requires tomli)
+        elif file_type == 'toml':
+            if not TOML_AVAILABLE:
+                if sys.version_info >= (3, 11):
+                    error_msg = "TOML support error (this shouldn't happen on Python 3.11+)"
+                else:
+                    error_msg = "tomli library not installed. Install with: pip install tomli"
+                if strict:
+                    raise ImportError(error_msg)
+                return (False, error_msg)
+            
+            try:
+                if sys.version_info >= (3, 11):
+                    import tomllib
+                    tomllib.loads(self.read_text(encoding='utf-8'))
+                else:
+                    import tomli
+                    tomli.loads(self.read_text(encoding='utf-8'))
+                return (True, None)
+            except Exception as e:
+                return (False, f"Invalid TOML: {e}")
+        
+        # Validate INI (built-in)
+        elif file_type == 'ini':
+            try:
+                config = configparser.ConfigParser()  # type: ignore
+                config.read_string(self.read_text(encoding='utf-8'))
+                return (True, None)
+            except configparser.Error as e:  # type: ignore
+                return (False, f"Invalid INI: {e}")
+            except Exception as e:
+                return (False, f"Error reading file: {e}")
+        
+        else:
+            return (False, f"Unsupported file type: {file_type}. Supported: json, yaml, yml, toml, ini")
+
     # ===============================================================
     # SEARCH & FILTER
     # ===============================================================
@@ -1066,7 +1212,7 @@ class Path(type(_PathBase())):
             return table
         return None
 
-    def show_info(self, table: Optional[Table] = None, exts: Optional[List] = ['mp3', 'mp4', 'm4a', 'flac', 'ogg', 'wav', 'wma', 'aac']) -> None:  # type: ignore
+    def show_info(self, table: Optional[Table] = None, exts: Optional[List] = ['mp3', 'mp4', 'm4a', 'flac', 'ogg', 'wav', 'wma', 'aac'], no_rich = False) -> None:  # type: ignore
         """
         Show music file tags (requires 'mutagen' package).
 
@@ -1095,7 +1241,7 @@ class Path(type(_PathBase())):
             except Exception:
                 return None
 
-            if RICH_AVAILABLE:            
+            if RICH_AVAILABLE and not no_rich:            
                 table = table or self.create_table()  # type: ignore
                 if not table:
                     return None
@@ -1311,6 +1457,12 @@ __all__ = [
     # New extended classes
     'Path',        # Our extended Path class
     'PurePath3',
+
+    'YAML_AVAILABLE',
+    'TOML_AVAILABLE',
+    'INI_AVAILABLE',
+    'RICH_AVAILABLE',
+    'MUTAGEN_AVAILABLE'
 ]
 
 __version__ = get_version()

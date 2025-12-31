@@ -196,6 +196,23 @@ Path("file.txt").checksum()              # Alias for hash()
 Path("code.py").count_lines()            # Number of lines in file
 ```
 
+## Music tag info
+
+Get music file metadata easily:
+
+```python
+from pathlib3 import Path
+music_file = Path("/mnt/musics/album/file.mp3")
+music_file.music_tag() # return dict 
+music_file.show_info() # print music tag info
+
+music_dir = Path("/mnt/musics/album")
+music_dir.music_tag() # return list of dict
+music_dir.music_tag(exts=['mp4','m4a']) # return list of dict for specified extensions
+music_dir.show_info() # print music tag info for all music files
+music_dir.show_info(exts=['mp4','m4a']) # print music tag info for specified extensions
+```
+
 ### Comparison Operations
 
 Compare files easily:
@@ -204,6 +221,29 @@ Compare files easily:
 # Check if files have same content
 Path("file1.txt").same_content("file2.txt")  # True if identical
 ```
+
+### File Validation
+
+Validate configuration files:
+```python
+from pathlib3 import Path
+
+# Validate JSON (built-in, always available)
+is_valid, error = Path("config.json").validate()
+
+# Validate YAML (requires: pip install pyyaml)
+is_valid, error = Path("config.yaml").validate(strict=False)
+
+# Validate TOML (built-in Python 3.11+, or: pip install tomli)
+is_valid, error = Path("settings.toml").validate()
+
+# Validate INI (built-in, always available)
+is_valid, error = Path("app.ini").validate()
+```
+
+**Optional Dependencies:**
+- YAML support: `pip install pyyaml`
+- TOML support (Python <3.11): `pip install tomli`
 
 ### Advanced Usage
 
