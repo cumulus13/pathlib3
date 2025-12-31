@@ -1,0 +1,11 @@
+include README.md
+include LICENSE
+include CHANGELOG.md
+include requirements-dev.txt
+recursive-include pathlib3 *.py
+recursive-include pathlib3 py.typed
+recursive-include tests *.py
+recursive-include docs *.md *.py *.rst
+global-exclude __pycache__
+global-exclude *.py[co]
+global-exclude .DS_Store

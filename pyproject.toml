@@ -1,0 +1,99 @@
+[build-system]
+requires = [
+    "setuptools>=45",
+    "wheel",
+    "setuptools_scm[toml]>=6.2",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pathlib3"
+version = "1.0.1"
+description = "Extended pathlib with 40+ additional utility methods"
+readme = "README.md"
+requires-python = ">=3.6"
+license = "MIT"
+license_file = "LICENSE"
+authors = [
+    { name = "Hadi Cahyadi", email = "cumulus13@gmail.com" },
+]
+maintainers = [
+    { name = "Hadi Cahyadi", email = "cumulus13@gmail.com" },
+]
+keywords = [
+    "pathlib",
+    "path",
+    "file",
+    "filesystem",
+    "directory",
+    "utility",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Filesystems",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/cumulus13/pathlib3"
+Documentation = "https://pathlib3.readthedocs.io"
+Repository = "https://github.com/cumulus13/pathlib3.git"
+Issues = "https://github.com/cumulus13/pathlib3/issues"
+Changelog = "https://github.com/cumulus13/pathlib3/blob/main/CHANGELOG.md"
+
+[tool.setuptools]
+packages = [
+    "pathlib3",
+]
+
+[tool.setuptools.package-data]
+pathlib3 = [
+    "py.typed",
+]
+
+[tool.black]
+line-length = 100
+target-version = [
+    "py36",
+    "py37",
+    "py38",
+    "py39",
+    "py310",
+    "py311",
+]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+python_version = "3.6"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = [
+    "tests",
+]
+python_files = [
+    "test_*.py",
+]
+python_classes = [
+    "Test*",
+]
+python_functions = [
+    "test_*",
+]
+addopts = "-v --cov=pathlib3 --cov-report=html --cov-report=term"
