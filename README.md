@@ -266,6 +266,187 @@ is_valid, error = Path("app.ini").validate()
 - YAML support: `pip install pyyaml`
 - TOML support (Python <3.11): `pip install tomli`
 
+### Get Metadata
+
+```python
+from pathlib3 import Path, PIL_AVAILABLE, PYPDF2_AVAILABLE
+
+# Check available libraries
+print(f"Image support: {PIL_AVAILABLE}")
+print(f"PDF support: {PYPDF2_AVAILABLE}")
+
+# Get image metadata
+meta = Path("photo.jpg").metadata()
+print(meta['width'], meta['height'])
+print(meta['exif']['camera_make'])
+
+# Get PDF metadata
+meta = Path("document.pdf").metadata()
+print(f"Pages: {meta['pages']}")
+print(f"Author: {meta['author']}")
+
+# Get audio metadata
+meta = Path("song.mp3").metadata()
+print(f"Artist: {meta['artist']}")
+print(f"Duration: {meta['length_human']}")
+
+# Simple summary
+print(Path("photo.jpg").metadata_simple())
+
+# Raw metadata
+meta = Path("photo.jpg").metadata(raw=True)
+print(meta['exif_raw'])  # All EXIF data
+```
+
+### Email Support
+
+Send files via email easily:
+```python
+from pathlib3 import Path, EmailConfig
+
+# Setup Gmail config (requires App Password)
+config = EmailConfig.gmail('you@gmail.com', 'app_password')
+
+# Send single file
+Path('report.pdf').email_as_attachment(
+    to='boss@company.com',
+    subject='Monthly Report',
+    body='Please review.',
+    config=config
+)
+
+# Send multiple attachments
+Path.send_email(
+    to=['client@company.com', 'manager@company.com'],
+    subject='Project Files',
+    body='All deliverables attached.',
+    config=config,
+    attachments=['report.pdf', 'data.xlsx', 'chart.png']
+)
+```
+
+**Supported Email Providers:**
+- Gmail (requires App Password)
+- Outlook/Hotmail
+- Office 365
+- Yahoo
+- Custom SMTP servers
+
+```python
+from pathlib3 import Path, EmailConfig
+
+# Setup email config (Gmail example)
+config = EmailConfig.gmail(
+    username='your.email@gmail.com',
+    password='your_app_password'  # Get from: https://myaccount.google.com/apppasswords
+)
+
+# Send single file
+Path('report.pdf').email_as_attachment(
+    to='boss@company.com',
+    subject='Monthly Report',
+    body='Please find the monthly report attached.',
+    config=config
+)
+
+# Send to multiple people
+Path('invoice.pdf').email_as_attachment(
+    to=['client@company.com', 'manager@company.com'],
+    subject='Invoice #12345',
+    body='Your invoice is attached.',
+    cc='accounting@company.com',
+    bcc='archive@company.com',
+    config=config
+)
+
+html_body = """
+<html>
+  <body>
+    <h2>Monthly Report</h2>
+    <p>Dear Boss,</p>
+    <p>Please find the <strong>monthly report</strong> attached.</p>
+    <p>Best regards,<br>Your Name</p>
+  </body>
+</html>
+"""
+
+Path('report.pdf').email_as_attachment(
+    to='boss@company.com',
+    subject='Monthly Report',
+    body='Plain text version',
+    body_html=html_body,
+    config=config
+)
+
+# Send email with multiple files
+Path.send_email(
+    to='client@company.com',
+    subject='Project Deliverables',
+    body='Please find all project files attached.',
+    config=config,
+    attachments=[
+        'report.pdf',
+        'presentation.pptx',
+        'data.xlsx',
+        Path('images/chart.png')
+    ]
+)
+
+# Gmail
+config_gmail = EmailConfig.gmail('user@gmail.com', 'app_password')
+
+# Outlook/Hotmail
+config_outlook = EmailConfig.outlook('user@outlook.com', 'password')
+
+# Office 365
+config_o365 = EmailConfig.office365('user@company.com', 'password')
+
+# Yahoo
+config_yahoo = EmailConfig.yahoo('user@yahoo.com', 'password')
+
+# Custom SMTP server
+config_custom = EmailConfig(
+    smtp_server='mail.mycompany.com',
+    smtp_port=587,
+    username='user@mycompany.com',
+    password='password',
+    use_tls=True
+)
+
+html_with_image = """
+<html>
+  <body>
+    <h2>Check out this chart:</h2>
+    <img src="cid:chart.png" alt="Sales Chart">
+  </body>
+</html>
+"""
+
+Path('chart.png').email_as_attachment(
+    to='team@company.com',
+    subject='Sales Chart',
+    body_html=html_with_image,
+    config=config,
+    inline_images=True
+)
+
+try:
+    Path('report.pdf').email_as_attachment(
+        to='boss@company.com',
+        subject='Report',
+        body='Attached.',
+        config=config
+    )
+    print("Email sent successfully!")
+    
+except ConnectionError as e:
+    print(f"Failed to send: {e}")
+    
+except ValueError as e:
+    print(f"Invalid input: {e}")
+
+```
+
 ### Advanced Usage
 
 Walk directory tree:
@@ -307,6 +488,11 @@ All standard methods are available: `exists()`, `is_file()`, `is_dir()`, `mkdir(
 - `.dirname()` - Get directory path
 - `.abspath()` - Get absolute path as string
 
+**Hanle `None` Values:**
+- `Path(None, DEFAULT_PATH)` - Create Path with default if None
+- `.safe(*args)` - Create Path, treating None as current dir
+- `.from_optional(value)` - Create Path or return None if value is None
+
 **Path Manipulation:**
 - `.normpath()` - Normalize path
 - `.join(*args)` - Join path components
@@ -340,6 +526,10 @@ All standard methods are available: `exists()`, `is_file()`, `is_dir()`, `mkdir(
 - `.is_empty()` - Check if empty
 - `.is_newer_than(other)` - Compare modification times
 - `.is_older_than(other)` - Compare modification times
+- `.metadata(raw)` - Get file metadata (images, pdfs, audio)
+- `.metadata_simple()` - Get simplified metadata summary
+- `.music_tag(exts)` - Get music file tags
+- `.show_info(exts)` - Print music file tags
 
 **Content Operations:**
 - `.lines(encoding, strip)` - Read lines as list

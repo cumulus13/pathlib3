@@ -48,6 +48,11 @@ MUTAGEN_AVAILABLE = False
 YAML_AVAILABLE = False
 TOML_AVAILABLE = False
 INI_AVAILABLE = False
+PIL_AVAILABLE = False
+PYPDF2_AVAILABLE = False
+PYTHON_DOCX_AVAILABLE = False
+OPENPYXL_AVAILABLE = False
+EMAIL_AVAILABLE = False
 
 # Check for optional dependencies
 try:
@@ -90,6 +95,143 @@ try:
 except ImportError:
     pass
 
+try:
+    from PIL import Image
+    from PIL.ExifTags import TAGS
+    PIL_AVAILABLE = True
+except ImportError:
+    pass
+
+try:
+    import PyPDF2
+    PYPDF2_AVAILABLE = True
+except ImportError:
+    pass
+
+try:
+    import docx
+    PYTHON_DOCX_AVAILABLE = True
+except ImportError:
+    pass
+
+try:
+    from openpyxl import load_workbook
+    OPENPYXL_AVAILABLE = True
+except ImportError:
+    pass
+
+# Check for email functionality
+try:
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.base import MIMEBase
+    from email import encoders
+    from email.mime.image import MIMEImage
+    from email.mime.audio import MIMEAudio
+    from email.mime.application import MIMEApplication
+    EMAIL_AVAILABLE = True  # Built-in, always available
+except ImportError:
+    pass
+
+# ===================================================================
+# Email Configuration Helper
+# ===================================================================
+class EmailConfig:
+    """
+    Email configuration helper for SMTP settings.
+    
+    Common SMTP servers:
+        Gmail: smtp.gmail.com:587 (TLS) or :465 (SSL)
+        Outlook: smtp-mail.outlook.com:587
+        Yahoo: smtp.mail.yahoo.com:587
+        Office365: smtp.office365.com:587
+    
+    Example:
+        >>> config = EmailConfig(
+        ...     smtp_server='smtp.gmail.com',
+        ...     smtp_port=587,
+        ...     username='your.email@gmail.com',
+        ...     password='your_app_password',
+        ...     use_tls=True
+        ... )
+    """
+    
+    def __init__(
+        self,
+        smtp_server: str,
+        smtp_port: int = 587,
+        username: str = '',
+        password: str = '',
+        use_tls: bool = True,
+        use_ssl: bool = False,
+        timeout: int = 30
+    ):
+        """
+        Initialize email configuration.
+        
+        Args:
+            smtp_server: SMTP server address
+            smtp_port: SMTP port (587 for TLS, 465 for SSL, 25 for no encryption)
+            username: Email username/address
+            password: Email password or app-specific password
+            use_tls: Use TLS encryption (STARTTLS)
+            use_ssl: Use SSL encryption
+            timeout: Connection timeout in seconds
+        """
+        self.smtp_server = smtp_server
+        self.smtp_port = smtp_port
+        self.username = username
+        self.password = password
+        self.use_tls = use_tls
+        self.use_ssl = use_ssl
+        self.timeout = timeout
+    
+    @classmethod
+    def gmail(cls, username: str, password: str) -> 'EmailConfig':
+        """Quick config for Gmail"""
+        return cls(
+            smtp_server='smtp.gmail.com',
+            smtp_port=587,
+            username=username,
+            password=password,
+            use_tls=True
+        )
+    
+    @classmethod
+    def outlook(cls, username: str, password: str) -> 'EmailConfig':
+        """Quick config for Outlook/Hotmail"""
+        return cls(
+            smtp_server='smtp-mail.outlook.com',
+            smtp_port=587,
+            username=username,
+            password=password,
+            use_tls=True
+        )
+    
+    @classmethod
+    def office365(cls, username: str, password: str) -> 'EmailConfig':
+        """Quick config for Office 365"""
+        return cls(
+            smtp_server='smtp.office365.com',
+            smtp_port=587,
+            username=username,
+            password=password,
+            use_tls=True
+        )
+    
+    @classmethod
+    def yahoo(cls, username: str, password: str) -> 'EmailConfig':
+        """Quick config for Yahoo"""
+        return cls(
+            smtp_server='smtp.mail.yahoo.com',
+            smtp_port=587,
+            username=username,
+            password=password,
+            use_tls=True
+        )
+
+
 # ===================================================================
 # Path - Extended Path Class
 # ===================================================================
@@ -122,6 +264,11 @@ class Path(type(_PathBase())):
     - .base() - Get filename without extension
     - .dirname() - Get directory path as string
     - .abspath() - Get absolute path as string
+
+    NONE HANDLING:
+    - Path(None) - Creates Path('.') instead of error
+    - .safe() - Class method to create Path safely from optional
+    - .from_optional() - Class method to create Path or return None
     
     PATH MANIPULATION:
     - .normpath() - Normalize path
@@ -166,14 +313,26 @@ class Path(type(_PathBase())):
     - .hash() - Calculate file hash
     - .checksum() - Alias for hash
     - .count_lines() - Count lines in file
+    - .validate() - Validate file format
+    - .metadata() - Extract file metadata (images, PDFs, audio, video, docs)
+    - .metadata_simple() - Get simple metadata summary
     
     SEARCH & FILTER:
     - .find_files() - Find files by pattern
     - .find_dirs() - Find directories by pattern
     - .walk() - Walk directory tree
+
+    MUSIC TAGS:
+    - .music_tag() - Get music tag
+    - .show_info() - Display music tags
     
     COMPARISON:
     - .same_content() - Check if files have same content
+
+    EMAIL OPERATIONS:
+    - .email_as_attachment() - Send file as email attachment
+    - .send_email() - Send email with multiple attachments (static method)
+
     """
     
     # ===============================================================
@@ -1442,6 +1601,705 @@ class Path(type(_PathBase())):
                         all_tags[item.basename()] = tags
             return all_tags
 
+    # ================================================================
+    # METADATA
+    # ================================================================
+
+    def metadata(self, include_basic: bool = True, raw: bool = False) -> dict:
+        """
+        Extract metadata from various file types.
+        
+        Supports: Images (JPEG, PNG, etc.), PDF, Audio (MP3, FLAC, etc.), 
+                  Video (MP4, MKV, etc.), Office docs (DOCX, XLSX, PPTX)
+        
+        Args:
+            include_basic: Include basic file info (size, dates, permissions)
+            raw: Return raw metadata without processing (file-type specific)
+        
+        Returns:
+            dict: Metadata dictionary with file information
+        
+        Raises:
+            ImportError: If required library is not installed
+            ValueError: If file type is not supported or file doesn't exist
+        
+        Example:
+            >>> Path('photo.jpg').metadata()
+            {
+                'file_type': 'image',
+                'format': 'JPEG',
+                'size': 2048576,
+                'size_human': '2.0 MB',
+                'width': 1920,
+                'height': 1080,
+                'created': 1704067200.0,
+                'modified': 1704067200.0,
+                'exif': {...}
+            }
+            
+            >>> Path('document.pdf').metadata()
+            {
+                'file_type': 'pdf',
+                'pages': 10,
+                'author': 'John Doe',
+                'title': 'Report',
+                ...
+            }
+        
+        Supported formats and required libraries:
+            - Images (JPEG, PNG, GIF, BMP, TIFF): Pillow (pip install Pillow)
+            - PDF: PyPDF2 (pip install PyPDF2)
+            - Audio/Video (MP3, MP4, FLAC, etc.): mutagen (pip install mutagen)
+            - Word (DOCX): python-docx (pip install python-docx)
+            - Excel (XLSX): openpyxl (pip install openpyxl)
+        """
+        if not self.exists():
+            raise ValueError(f"File does not exist: {self}")
+        
+        if not self.is_file():
+            raise ValueError(f"Not a file: {self}")
+        
+        # Basic metadata (always included if requested)
+        metadata = {}
+        
+        if include_basic:
+            stat_info = self.stat()
+            metadata.update({
+                'filename': self.name,
+                'path': str(self.absolute()),
+                'size': stat_info.st_size,
+                'size_human': self.size_human(),
+                'created': stat_info.st_ctime,
+                'modified': stat_info.st_mtime,
+                'accessed': stat_info.st_atime,
+                'permissions': oct(stat_info.st_mode)[-3:],
+            })
+        
+        ext = self.ext().lower()
+        
+        # ===== IMAGE FILES =====
+        if ext in ('jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp', 'ico'):
+            if not PIL_AVAILABLE:
+                raise ImportError(
+                    "Pillow library not installed. Install with: pip install Pillow"
+                )
+            
+            try:
+                with Image.open(self) as img:
+                    metadata['file_type'] = 'image'
+                    metadata['format'] = img.format
+                    metadata['mode'] = img.mode
+                    metadata['width'] = img.width
+                    metadata['height'] = img.height
+                    metadata['resolution'] = f"{img.width}x{img.height}"
+                    
+                    # Color info
+                    if hasattr(img, 'palette'):
+                        metadata['has_palette'] = img.palette is not None
+                    
+                    # EXIF data for JPEG
+                    if hasattr(img, '_getexif') and img._getexif():
+                        exif_data = {}
+                        for tag_id, value in img._getexif().items():
+                            tag = TAGS.get(tag_id, tag_id)
+                            exif_data[tag] = value
+                        
+                        if raw:
+                            metadata['exif_raw'] = exif_data
+                        else:
+                            # Extract common EXIF fields
+                            metadata['exif'] = {
+                                'camera_make': exif_data.get('Make'),
+                                'camera_model': exif_data.get('Model'),
+                                'datetime': exif_data.get('DateTime'),
+                                'orientation': exif_data.get('Orientation'),
+                                'flash': exif_data.get('Flash'),
+                                'focal_length': exif_data.get('FocalLength'),
+                                'f_number': exif_data.get('FNumber'),
+                                'exposure_time': exif_data.get('ExposureTime'),
+                                'iso': exif_data.get('ISOSpeedRatings'),
+                                'gps': exif_data.get('GPSInfo'),
+                            }
+                            # Remove None values
+                            metadata['exif'] = {k: v for k, v in metadata['exif'].items() if v is not None}
+                    
+                    # Info dict (additional metadata)
+                    if hasattr(img, 'info') and img.info:
+                        metadata['info'] = img.info if raw else {
+                            'dpi': img.info.get('dpi'),
+                            'compression': img.info.get('compression'),
+                        }
+            
+            except Exception as e:
+                metadata['error'] = f"Failed to read image metadata: {e}"
+        
+        # ===== PDF FILES =====
+        elif ext == 'pdf':
+            if not PYPDF2_AVAILABLE:
+                raise ImportError(
+                    "PyPDF2 library not installed. Install with: pip install PyPDF2"
+                )
+            
+            try:
+                with open(self, 'rb') as f:
+                    pdf = PyPDF2.PdfReader(f)
+                    
+                    metadata['file_type'] = 'pdf'
+                    metadata['pages'] = len(pdf.pages)
+                    
+                    # PDF metadata
+                    if pdf.metadata:
+                        pdf_meta = pdf.metadata
+                        if raw:
+                            metadata['pdf_info'] = dict(pdf_meta)
+                        else:
+                            metadata['title'] = pdf_meta.get('/Title', '')
+                            metadata['author'] = pdf_meta.get('/Author', '')
+                            metadata['subject'] = pdf_meta.get('/Subject', '')
+                            metadata['creator'] = pdf_meta.get('/Creator', '')
+                            metadata['producer'] = pdf_meta.get('/Producer', '')
+                            metadata['creation_date'] = pdf_meta.get('/CreationDate', '')
+                            metadata['modification_date'] = pdf_meta.get('/ModDate', '')
+                    
+                    # Check if encrypted
+                    metadata['encrypted'] = pdf.is_encrypted
+                    
+                    # Get text from first page (preview)
+                    if len(pdf.pages) > 0 and not raw:
+                        try:
+                            first_page = pdf.pages[0]
+                            text = first_page.extract_text()
+                            metadata['preview'] = text[:200] + '...' if len(text) > 200 else text
+                        except:
+                            pass
+            
+            except Exception as e:
+                metadata['error'] = f"Failed to read PDF metadata: {e}"
+        
+        # ===== AUDIO/VIDEO FILES =====
+        elif ext in ('mp3', 'flac', 'ogg', 'wav', 'm4a', 'wma', 'aac', 
+                      'mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm'):
+            if not MUTAGEN_AVAILABLE:
+                raise ImportError(
+                    "mutagen library not installed. Install with: pip install mutagen"
+                )
+            
+            try:
+                audio = MutagenFile(self)
+                
+                if audio is None:
+                    metadata['error'] = "Unsupported or corrupted media file"
+                else:
+                    is_video = ext in ('mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm')
+                    metadata['file_type'] = 'video' if is_video else 'audio'
+                    
+                    # Audio info
+                    if hasattr(audio, 'info'):
+                        info = audio.info
+                        metadata['length'] = getattr(info, 'length', 0)
+                        metadata['length_human'] = f"{int(metadata['length'] // 60)}:{int(metadata['length'] % 60):02d}"
+                        metadata['bitrate'] = getattr(info, 'bitrate', 0)
+                        metadata['sample_rate'] = getattr(info, 'sample_rate', 0)
+                        metadata['channels'] = getattr(info, 'channels', 0)
+                    
+                    # Tags/Metadata
+                    if raw:
+                        metadata['tags'] = dict(audio.tags) if audio.tags else {}
+                    else:
+                        if audio.tags:
+                            # Common tags
+                            metadata['title'] = audio.tags.get('title', [None])[0] if audio.tags.get('title') else None
+                            metadata['artist'] = audio.tags.get('artist', [None])[0] if audio.tags.get('artist') else None
+                            metadata['album'] = audio.tags.get('album', [None])[0] if audio.tags.get('album') else None
+                            metadata['date'] = audio.tags.get('date', [None])[0] if audio.tags.get('date') else None
+                            metadata['genre'] = audio.tags.get('genre', [None])[0] if audio.tags.get('genre') else None
+                            metadata['track'] = audio.tags.get('tracknumber', [None])[0] if audio.tags.get('tracknumber') else None
+                            
+                            # Remove None values
+                            metadata = {k: v for k, v in metadata.items() if v is not None}
+            
+            except Exception as e:
+                metadata['error'] = f"Failed to read media metadata: {e}"
+        
+        # ===== WORD DOCUMENTS (.docx) =====
+        elif ext == 'docx':
+            if not PYTHON_DOCX_AVAILABLE:
+                raise ImportError(
+                    "python-docx library not installed. Install with: pip install python-docx"
+                )
+            
+            try:
+                doc = docx.Document(self)
+                
+                metadata['file_type'] = 'document'
+                metadata['paragraphs'] = len(doc.paragraphs)
+                metadata['tables'] = len(doc.tables)
+                
+                # Core properties
+                props = doc.core_properties
+                metadata['title'] = props.title
+                metadata['author'] = props.author
+                metadata['subject'] = props.subject
+                metadata['keywords'] = props.keywords
+                metadata['created'] = props.created.timestamp() if props.created else None
+                metadata['modified'] = props.modified.timestamp() if props.modified else None
+                metadata['last_modified_by'] = props.last_modified_by
+                metadata['revision'] = props.revision
+                
+                # Word count (approximate)
+                if not raw:
+                    text = '\n'.join([para.text for para in doc.paragraphs])
+                    metadata['words'] = len(text.split())
+                    metadata['characters'] = len(text)
+            
+            except Exception as e:
+                metadata['error'] = f"Failed to read DOCX metadata: {e}"
+        
+        # ===== EXCEL FILES (.xlsx) =====
+        elif ext in ('xlsx', 'xlsm'):
+            if not OPENPYXL_AVAILABLE:
+                raise ImportError(
+                    "openpyxl library not installed. Install with: pip install openpyxl"
+                )
+            
+            try:
+                wb = load_workbook(self, read_only=True, data_only=True)
+                
+                metadata['file_type'] = 'spreadsheet'
+                metadata['sheets'] = len(wb.sheetnames)
+                metadata['sheet_names'] = wb.sheetnames
+                
+                # Properties
+                props = wb.properties
+                metadata['title'] = props.title
+                metadata['creator'] = props.creator
+                metadata['subject'] = props.subject
+                metadata['keywords'] = props.keywords
+                metadata['created'] = props.created.timestamp() if props.created else None
+                metadata['modified'] = props.modified.timestamp() if props.modified else None
+                metadata['last_modified_by'] = props.lastModifiedBy
+                
+                # Sheet info
+                if not raw:
+                    sheet_info = []
+                    for sheet_name in wb.sheetnames:
+                        sheet = wb[sheet_name]
+                        sheet_info.append({
+                            'name': sheet_name,
+                            'rows': sheet.max_row,
+                            'columns': sheet.max_column,
+                        })
+                    metadata['sheet_info'] = sheet_info
+                
+                wb.close()
+            
+            except Exception as e:
+                metadata['error'] = f"Failed to read XLSX metadata: {e}"
+        
+        # ===== TEXT FILES (basic info) =====
+        elif ext in ('txt', 'md', 'rst', 'log', 'csv', 'json', 'xml', 'html', 'css', 'js', 'py', 'java', 'c', 'cpp', 'h'):
+            metadata['file_type'] = 'text'
+            try:
+                metadata['lines'] = self.count_lines()
+                content = self.read_text(encoding='utf-8')
+                metadata['characters'] = len(content)
+                metadata['words'] = len(content.split())
+            except Exception as e:
+                metadata['error'] = f"Failed to read text file: {e}"
+        
+        # ===== ARCHIVE FILES =====
+        elif ext in ('zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar'):
+            metadata['file_type'] = 'archive'
+            metadata['archive_type'] = ext
+            
+            if ext == 'zip':
+                import zipfile
+                try:
+                    with zipfile.ZipFile(self, 'r') as zf:
+                        metadata['files'] = len(zf.namelist())
+                        if raw:
+                            metadata['file_list'] = zf.namelist()
+                        metadata['compressed_size'] = sum(info.compress_size for info in zf.infolist())
+                        metadata['uncompressed_size'] = sum(info.file_size for info in zf.infolist())
+                except Exception as e:
+                    metadata['error'] = f"Failed to read ZIP: {e}"
+        
+        # ===== UNKNOWN FILE TYPE =====
+        else:
+            metadata['file_type'] = 'unknown'
+            metadata['extension'] = ext
+        
+        return metadata
+
+    def metadata_simple(self) -> str:
+        """
+        Get simple human-readable metadata summary.
+        
+        Returns:
+            str: Formatted metadata string
+        
+        Example:
+            >>> print(Path('photo.jpg').metadata_simple())
+            File: photo.jpg
+            Type: image (JPEG)
+            Size: 2.0 MB
+            Dimensions: 1920x1080
+            Created: 2024-01-01 10:00:00
+        """
+        try:
+            meta = self.metadata(include_basic=True, raw=False)
+            
+            lines = [f"File: {meta.get('filename', self.name)}"]
+            
+            # File type specific info
+            file_type = meta.get('file_type', 'unknown')
+            
+            if file_type == 'image':
+                lines.append(f"Type: image ({meta.get('format', 'unknown')})")
+                lines.append(f"Size: {meta.get('size_human', 'unknown')}")
+                lines.append(f"Dimensions: {meta.get('resolution', 'unknown')}")
+            
+            elif file_type == 'pdf':
+                lines.append(f"Type: PDF")
+                lines.append(f"Size: {meta.get('size_human', 'unknown')}")
+                lines.append(f"Pages: {meta.get('pages', 'unknown')}")
+                if meta.get('author'):
+                    lines.append(f"Author: {meta.get('author')}")
+            
+            elif file_type in ('audio', 'video'):
+                lines.append(f"Type: {file_type}")
+                lines.append(f"Size: {meta.get('size_human', 'unknown')}")
+                if meta.get('length_human'):
+                    lines.append(f"Duration: {meta.get('length_human')}")
+                if meta.get('artist'):
+                    lines.append(f"Artist: {meta.get('artist')}")
+                if meta.get('title'):
+                    lines.append(f"Title: {meta.get('title')}")
+            
+            else:
+                lines.append(f"Type: {file_type}")
+                lines.append(f"Size: {meta.get('size_human', 'unknown')}")
+            
+            # Common info
+            if meta.get('modified'):
+                from datetime import datetime
+                mod_time = datetime.fromtimestamp(meta['modified'])
+                lines.append(f"Modified: {mod_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            return '\n'.join(lines)
+        
+        except Exception as e:
+            return f"Error getting metadata: {e}"
+    
+    def email_as_attachment(
+        self,
+        to: Union[str, List[str]],
+        subject: str,
+        body: str = '',
+        config: Optional[EmailConfig] = None,
+        from_addr: Optional[str] = None,
+        cc: Optional[Union[str, List[str]]] = None,
+        bcc: Optional[Union[str, List[str]]] = None,
+        body_html: Optional[str] = None,
+        attachment_name: Optional[str] = None,
+        inline_images: bool = False
+    ) -> bool:
+        """
+        Send this file as email attachment.
+        
+        Args:
+            to: Recipient email(s)
+            subject: Email subject
+            body: Email body (plain text)
+            config: EmailConfig instance with SMTP settings
+            from_addr: Sender email (if None, uses config.username)
+            cc: CC recipients
+            bcc: BCC recipients
+            body_html: HTML body (optional, overrides plain body)
+            attachment_name: Custom attachment filename (default: file's name)
+            inline_images: Embed images inline (for image files only)
+        
+        Returns:
+            bool: True if sent successfully
+        
+        Raises:
+            ImportError: If email libraries not available
+            ValueError: If config is not provided or file doesn't exist
+            ConnectionError: If SMTP connection fails
+        
+        Example:
+            >>> config = EmailConfig.gmail('me@gmail.com', 'app_password')
+            >>> Path('report.pdf').email_as_attachment(
+            ...     to='boss@company.com',
+            ...     subject='Monthly Report',
+            ...     body='Please find attached report.',
+            ...     config=config
+            ... )
+            True
+            
+            >>> # Multiple recipients
+            >>> Path('invoice.pdf').email_as_attachment(
+            ...     to=['client@company.com', 'manager@company.com'],
+            ...     subject='Invoice #12345',
+            ...     body='Invoice attached.',
+            ...     cc='accounting@company.com',
+            ...     config=config
+            ... )
+        """
+        if not EMAIL_AVAILABLE:
+            raise ImportError("Email modules not available")
+        
+        if config is None:
+            raise ValueError(
+                "EmailConfig required. Example: "
+                "config = EmailConfig.gmail('user@gmail.com', 'password')"
+            )
+        
+        if not self.exists():
+            raise ValueError(f"File does not exist: {self}")
+        
+        if not self.is_file():
+            raise ValueError(f"Not a file: {self}")
+        
+        # Normalize recipients
+        to_list = [to] if isinstance(to, str) else to
+        cc_list = [cc] if isinstance(cc, str) else (cc or [])
+        bcc_list = [bcc] if isinstance(bcc, str) else (bcc or [])
+        
+        from_addr = from_addr or config.username
+        
+        # Create message
+        msg = MIMEMultipart('alternative' if body_html else 'mixed')
+        msg['From'] = from_addr
+        msg['To'] = ', '.join(to_list)
+        msg['Subject'] = subject
+        
+        if cc_list:
+            msg['Cc'] = ', '.join(cc_list)
+        
+        # Add body
+        if body_html:
+            msg.attach(MIMEText(body, 'plain'))
+            msg.attach(MIMEText(body_html, 'html'))
+        else:
+            msg.attach(MIMEText(body, 'plain'))
+        
+        # Attach file
+        attachment_name = attachment_name or self.name
+        
+        # Handle inline images
+        if inline_images and self.ext().lower() in ('jpg', 'jpeg', 'png', 'gif', 'bmp'):
+            try:
+                with self.open('rb') as f:
+                    img_data = f.read()
+                    image = MIMEImage(img_data)
+                    image.add_header('Content-ID', f'<{attachment_name}>')
+                    image.add_header('Content-Disposition', 'inline', filename=attachment_name)
+                    msg.attach(image)
+            except Exception as e:
+                raise ValueError(f"Failed to attach inline image: {e}")
+        else:
+            # Regular attachment
+            try:
+                with self.open('rb') as f:
+                    # Detect MIME type based on extension
+                    ext = self.ext().lower()
+                    
+                    if ext in ('jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff'):
+                        attachment = MIMEImage(f.read())
+                    elif ext in ('mp3', 'wav', 'ogg', 'flac'):
+                        attachment = MIMEAudio(f.read())
+                    elif ext == 'pdf':
+                        attachment = MIMEApplication(f.read(), _subtype='pdf')
+                    else:
+                        # Generic binary attachment
+                        part = MIMEBase('application', 'octet-stream')
+                        part.set_payload(f.read())
+                        encoders.encode_base64(part)
+                        attachment = part
+                    
+                    attachment.add_header(
+                        'Content-Disposition',
+                        f'attachment; filename="{attachment_name}"'
+                    )
+                    msg.attach(attachment)
+            
+            except Exception as e:
+                raise ValueError(f"Failed to attach file: {e}")
+        
+        # Send email
+        try:
+            if config.use_ssl:
+                server = smtplib.SMTP_SSL(
+                    config.smtp_server,
+                    config.smtp_port,
+                    timeout=config.timeout
+                )
+            else:
+                server = smtplib.SMTP(
+                    config.smtp_server,
+                    config.smtp_port,
+                    timeout=config.timeout
+                )
+                
+                if config.use_tls:
+                    server.starttls()
+            
+            if config.username and config.password:
+                server.login(config.username, config.password)
+            
+            # Send to all recipients
+            all_recipients = to_list + cc_list + bcc_list
+            server.sendmail(from_addr, all_recipients, msg.as_string())
+            server.quit()
+            
+            return True
+        
+        except smtplib.SMTPAuthenticationError:
+            raise ConnectionError(
+                "SMTP authentication failed. Check username/password. "
+                "For Gmail, use an App Password: https://myaccount.google.com/apppasswords"
+            )
+        except smtplib.SMTPException as e:
+            raise ConnectionError(f"SMTP error: {e}")
+        except Exception as e:
+            raise ConnectionError(f"Failed to send email: {e}")
+
+    @staticmethod
+    def send_email(
+        to: Union[str, List[str]],
+        subject: str,
+        body: str,
+        config: EmailConfig,
+        from_addr: Optional[str] = None,
+        cc: Optional[Union[str, List[str]]] = None,
+        bcc: Optional[Union[str, List[str]]] = None,
+        body_html: Optional[str] = None,
+        attachments: Optional[List[Union[str, 'Path']]] = None
+    ) -> bool:
+        """
+        Send email with optional multiple attachments.
+        
+        Args:
+            to: Recipient email(s)
+            subject: Email subject
+            body: Email body (plain text)
+            config: EmailConfig instance
+            from_addr: Sender email
+            cc: CC recipients
+            bcc: BCC recipients
+            body_html: HTML body
+            attachments: List of file paths to attach
+        
+        Returns:
+            bool: True if sent successfully
+        
+        Example:
+            >>> config = EmailConfig.gmail('me@gmail.com', 'password')
+            >>> Path.send_email(
+            ...     to='boss@company.com',
+            ...     subject='Weekly Report',
+            ...     body='See attached files.',
+            ...     config=config,
+            ...     attachments=['report.pdf', 'chart.png']
+            ... )
+        """
+        if not EMAIL_AVAILABLE:
+            raise ImportError("Email modules not available")
+        
+        # Normalize recipients
+        to_list = [to] if isinstance(to, str) else to
+        cc_list = [cc] if isinstance(cc, str) else (cc or [])
+        bcc_list = [bcc] if isinstance(bcc, str) else (bcc or [])
+        
+        from_addr = from_addr or config.username
+        
+        # Create message
+        msg = MIMEMultipart('alternative' if body_html else 'mixed')
+        msg['From'] = from_addr
+        msg['To'] = ', '.join(to_list)
+        msg['Subject'] = subject
+        
+        if cc_list:
+            msg['Cc'] = ', '.join(cc_list)
+        
+        # Add body
+        if body_html:
+            msg.attach(MIMEText(body, 'plain'))
+            msg.attach(MIMEText(body_html, 'html'))
+        else:
+            msg.attach(MIMEText(body, 'plain'))
+        
+        # Add attachments
+        if attachments:
+            for file_path in attachments:
+                file_path = Path(file_path)
+                
+                if not file_path.exists():
+                    raise ValueError(f"Attachment not found: {file_path}")
+                
+                try:
+                    with file_path.open('rb') as f:
+                        ext = file_path.ext().lower()
+                        
+                        if ext in ('jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff'):
+                            attachment = MIMEImage(f.read())
+                        elif ext in ('mp3', 'wav', 'ogg', 'flac'):
+                            attachment = MIMEAudio(f.read())
+                        elif ext == 'pdf':
+                            attachment = MIMEApplication(f.read(), _subtype='pdf')
+                        else:
+                            part = MIMEBase('application', 'octet-stream')
+                            part.set_payload(f.read())
+                            encoders.encode_base64(part)
+                            attachment = part
+                        
+                        attachment.add_header(
+                            'Content-Disposition',
+                            f'attachment; filename="{file_path.name}"'
+                        )
+                        msg.attach(attachment)
+                
+                except Exception as e:
+                    raise ValueError(f"Failed to attach {file_path}: {e}")
+        
+        # Send email
+        try:
+            if config.use_ssl:
+                server = smtplib.SMTP_SSL(
+                    config.smtp_server,
+                    config.smtp_port,
+                    timeout=config.timeout
+                )
+            else:
+                server = smtplib.SMTP(
+                    config.smtp_server,
+                    config.smtp_port,
+                    timeout=config.timeout
+                )
+                
+                if config.use_tls:
+                    server.starttls()
+            
+            if config.username and config.password:
+                server.login(config.username, config.password)
+            
+            all_recipients = to_list + cc_list + bcc_list
+            server.sendmail(from_addr, all_recipients, msg.as_string())
+            server.quit()
+            
+            return True
+        
+        except smtplib.SMTPAuthenticationError:
+            raise ConnectionError(
+                "SMTP authentication failed. Check username/password. "
+                "For Gmail, use an App Password: https://myaccount.google.com/apppasswords"
+            )
+        except smtplib.SMTPException as e:
+            raise ConnectionError(f"SMTP error: {e}")
+        except Exception as e:
+            raise ConnectionError(f"Failed to send email: {e}")
+
 # ===================================================================
 # PurePath3 - Extended PurePath (for path manipulation without I/O)
 # ===================================================================
@@ -1485,7 +2343,6 @@ class PurePath3(PurePath):
             new_ext = '.' + new_ext
         return PurePath3(self.with_suffix(new_ext))
 
-
 def get_version():
     """Get version from __version__.py file"""
     try:
@@ -1522,8 +2379,15 @@ __all__ = [
     'YAML_AVAILABLE',
     'TOML_AVAILABLE',
     'INI_AVAILABLE',
+    'PIL_AVAILABLE',
+    'PYPDF2_AVAILABLE',
+    'MUTAGEN_AVAILABLE',
+    'PYTHON_DOCX_AVAILABLE',
+    'OPENPYXL_AVAILABLE',
     'RICH_AVAILABLE',
-    'MUTAGEN_AVAILABLE'
+
+    'EmailConfig',
+    'EMAIL_AVAILABLE',
 ]
 
 __version__ = get_version()
