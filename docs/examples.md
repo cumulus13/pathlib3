@@ -315,7 +315,7 @@ meta = Path("photo.jpg").metadata(raw=True)
 print(meta['exif_raw'])  # All EXIF data
 ```
 
-### Send as Email Attachment
+## Send as Email Attachment
 
 ```python
 from pathlib3 import Path, EmailConfig
