@@ -70,6 +70,24 @@ p.abspath()      # Get absolute path as string
 p.normpath()     # Normalize path (remove redundant separators)
 ```
 
+### Handling None Values
+
+pathlib3 safely handles `None` values:
+```python
+from pathlib3 import Path
+
+# Path(None) returns current directory
+p = Path(None)  # Path('.')
+
+# Use safe() for explicit None handling
+p = Path.safe(None)           # Path('.')
+p = Path.safe(None, '/tmp')   # Path('/tmp')
+
+# Use from_optional() to preserve None
+p = Path.from_optional(None)        # None
+p = Path.from_optional("file.txt")  # Path('file.txt')
+```
+
 ### Path Manipulation
 
 Manipulate paths with convenient methods:

@@ -253,11 +253,28 @@ Path("settings.toml").validate()  # Auto-detects TOML
 Path("data.txt").validate(file_type='json')  # Force JSON validation
 ```
 
+### Handling None Values
 
+pathlib3 safely handles `None` values:
+```python
+from pathlib3 import Path
 
+# Path(None) returns current directory
+p = Path(None)  # Path('.')
 
+# Use safe() for explicit None handling
+p = Path.safe(None)           # Path('.')
+p = Path.safe(None, '/tmp')   # Path('/tmp')
 
+# Use from_optional() to preserve None
+p = Path.from_optional(None)        # None
+p = Path.from_optional("file.txt")  # Path('file.txt')
 
+# with multiple args
+b = Path(None, "subdir")    # Path('subdir')
+print(b)                    # subdir
 
-
-
+# Normal usage still works
+g = Path("normal.txt")
+print(g)                    # normal.txt
+```

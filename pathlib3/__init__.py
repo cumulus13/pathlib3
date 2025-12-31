@@ -179,6 +179,67 @@ class Path(type(_PathBase())):
     # ===============================================================
     # BASIC UTILITY METHODS
     # ===============================================================
+
+    def __new__(cls, *args, **kwargs):
+        """Create new Path instance with None handling."""
+        # Handle None case
+        if len(args) == 1 and args[0] is None:
+            args = ('.',)
+        elif len(args) > 1:
+            # Filter out None values from args
+            args = tuple(arg if arg is not None else '.' for arg in args)
+        
+        # Handle empty args
+        if len(args) == 0:
+            args = ('.',)
+        
+        return super().__new__(cls, *args, **kwargs)
+    
+    @classmethod
+    def safe(cls, path: Optional[Union[str, _PathBase, 'Path']], default: str = '.') -> 'Path':
+        """
+        Create Path safely, handling None values.
+        More explicit alternative to Path(None).
+        
+        Args:
+            path: Path string or Path object (can be None)
+            default: Default path if input is None (default: '.')
+        
+        Returns:
+            Path: Path instance
+        
+        Example:
+            >>> Path.safe(None)
+            Path('.')
+            >>> Path.safe(None, '/tmp')
+            Path('/tmp')
+            >>> Path.safe("file.txt")
+            Path('file.txt')
+        """
+        if path is None:
+            return cls(default)
+        return cls(path)
+    
+    @classmethod
+    def from_optional(cls, path: Optional[Union[str, _PathBase, 'Path']]) -> Optional['Path']:
+        """
+        Create Path from optional value, returns None if input is None.
+        
+        Args:
+            path: Path string or Path object (can be None)
+        
+        Returns:
+            Path or None: Path instance or None
+        
+        Example:
+            >>> Path.from_optional(None)
+            None
+            >>> Path.from_optional("file.txt")
+            Path('file.txt')
+        """
+        if path is None:
+            return None
+        return cls(path)
     
     def ext(self) -> str:
         """
